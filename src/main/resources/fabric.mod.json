@@ -1,12 +1,15 @@
 {
   "schemaVersion": 1,
   "id": "${mod_id}",
-  "version": "${version}+BTW-${btw_version}",
+  "version": "${version}-BTW-${btw_version}+",
   "name": "${name}",
-  "description": "This is an example description! Tell everyone what your mod is about!",
+  "description": "Makes EMI able to show block drop info",
   "authors": [
     "0ctal"
   ],
+  "contact": {
+    "sources": "https://github.com/0ctal1/EMILoot"
+  },
   "license": "ARR",
   "icon": "assets/emiloot/icon.png",
   "environment": "*",

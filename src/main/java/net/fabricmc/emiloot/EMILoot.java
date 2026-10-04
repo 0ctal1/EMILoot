@@ -7,15 +7,7 @@ import emi.dev.emi.emi.api.EmiRegistry;
 import emi.dev.emi.emi.api.recipe.EmiRecipeCategory;
 import emi.dev.emi.emi.api.stack.EmiFistStack;
 import emi.dev.emi.emi.api.stack.EmiStack;
-import net.minecraft.src.BiomeGenBase;
-import net.minecraft.src.Block;
-import net.minecraft.src.IBlockAccess;
-import net.minecraft.src.Item;
-import net.minecraft.src.ItemStack;
-import net.minecraft.src.Material;
-import net.minecraft.src.ResourceLocation;
-import net.minecraft.src.TileEntity;
-import net.minecraft.src.Vec3Pool;
+import net.minecraft.src.*;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -55,8 +47,7 @@ public class EMILoot implements EmiPlugin {
     }
 
     private int getHarvestLevel(Block block, int metadata) {
-        IBlockAccess blockAccess = new HarvestBlockAccess(block, metadata);
-        return block.getHarvestToolLevel(blockAccess, 0, 0, 0);
+        return block.getHarvestToolLevel(new HarvestBlockAccess(block, metadata), 0, 0, 0);
     }
 
     @Override
@@ -69,25 +60,34 @@ public class EMILoot implements EmiPlugin {
         Item[] hoes = new Item[]{Item.hoeWood, Item.hoeStone, Item.hoeIron, Item.hoeDiamond};
         for (Block block : Block.blocksList) {
             if (block == null) { continue; }
-            int metadata = 0;
-            random.setSeed(0);
-            int dropId = block.idDropped(metadata, random, 0);
-            if (dropId <= 0 || Item.itemsList[dropId] == null) { continue; }
-            random.setSeed(0);
-            int count = block.quantityDropped(random);
-            if (count <= 0) { continue; }
-            int dropMetadata = block.damageDropped(metadata);
-            EmiStack blockStack = EmiStack.of(new ItemStack(block.blockID, 1, metadata));
-            List<EmiStack> drops = Collections.singletonList(EmiStack.of(new ItemStack(dropId, count, dropMetadata)));
-            int harvestLevel = getHarvestLevel(block, metadata);
-            if (block.blockMaterial.isToolNotRequired()) {
-                reg.addRecipe(new EmiBlockLootRecipe(new ResourceLocation("emiloot", "block_" + block.blockID + "_fist"), blockStack, Collections.singletonList(new EmiFistStack()), drops));
-            } else {
-                if (block.arechiselseffectiveon() || block.canChiselsHarvest()) {reg.addRecipe(new EmiBlockLootRecipe(new ResourceLocation("emiloot", "block_" + block.blockID + "_chisel"), blockStack, Collections.singletonList(EmiStack.of(new ItemStack(BTWItems.ironChisel, 1, 0))), drops));}
-                if (block.areAxesEffectiveOn()) {reg.addRecipe(new EmiBlockLootRecipe(new ResourceLocation("emiloot", "block_" + block.blockID + "_axe"), blockStack, getTools(axes, harvestLevel), drops));}
-                if (block.arePicksEffectiveOn()) {reg.addRecipe(new EmiBlockLootRecipe(new ResourceLocation("emiloot", "block_" + block.blockID + "_pickaxe"), blockStack, getTools(pickaxes, harvestLevel), drops));}
-                if (block.areShovelsEffectiveOn()) {reg.addRecipe(new EmiBlockLootRecipe(new ResourceLocation("emiloot", "block_" + block.blockID + "_shovel"), blockStack, getTools(shovels, harvestLevel), drops));}
-                if (block.areHoesEffectiveOn()) {reg.addRecipe(new EmiBlockLootRecipe(new ResourceLocation("emiloot", "block_" + block.blockID + "_hoe"), blockStack, getTools(hoes, harvestLevel), drops));}
+
+            List<ItemStack> variants = new ArrayList<ItemStack>();
+            block.getSubBlocks(block.blockID, block.getCreativeTabToDisplayOn(), variants);
+            if (block instanceof btw.block.blocks.WoodSidingAndCornerAndDecorativeBlock) {
+                variants.add(new ItemStack(block.blockID, 1, 12));
+                variants.add(new ItemStack(block.blockID, 1, 14));
+            }
+            if (variants.isEmpty()) { variants.add(new ItemStack(block.blockID, 1, 0)); }
+            for (ItemStack variant : variants) {
+                int metadata = variant.getItemDamage();
+                random.setSeed(0);
+                int dropId = block.idDropped(metadata, random, 0);
+                if (dropId <= 0 || Item.itemsList[dropId] == null) { continue; }
+                random.setSeed(0);
+                int count = block.quantityDropped(random);
+                if (count <= 0) { continue; }
+                int dropMetadata = block.damageDropped(metadata);
+                EmiStack blockStack = EmiStack.of(variant);
+                List<EmiStack> drops = Collections.singletonList(EmiStack.of(new ItemStack(dropId, count, dropMetadata)));
+                if (block.blockMaterial.isToolNotRequired()) {
+                    reg.addRecipe(new EmiBlockLootRecipe(new ResourceLocation("emiloot", "block_" + block.blockID + "_" + metadata + "_fist"), blockStack, Collections.singletonList(new EmiFistStack()), drops));
+                } else {
+                    if (block.arechiselseffectiveon() || block.canChiselsHarvest()) { reg.addRecipe(new EmiBlockLootRecipe(new ResourceLocation("emiloot", "block_" + block.blockID + "_" + metadata + "_chisel"), blockStack, Collections.singletonList(EmiStack.of(new ItemStack(BTWItems.ironChisel, 1, 0))), drops)); }
+                    if (block.areAxesEffectiveOn()) { reg.addRecipe(new EmiBlockLootRecipe(new ResourceLocation("emiloot", "block_" + block.blockID + "_" + metadata + "_axe"), blockStack, getTools(axes, getHarvestLevel(block, metadata)), drops)); }
+                    if (block.arePicksEffectiveOn()) { reg.addRecipe(new EmiBlockLootRecipe(new ResourceLocation("emiloot", "block_" + block.blockID + "_" + metadata + "_pickaxe"), blockStack, getTools(pickaxes, getHarvestLevel(block, metadata)), drops)); }
+                    if (block.areShovelsEffectiveOn()) { reg.addRecipe(new EmiBlockLootRecipe(new ResourceLocation("emiloot", "block_" + block.blockID + "_" + metadata + "_shovel"), blockStack, getTools(shovels, getHarvestLevel(block, metadata)), drops)); }
+                    if (block.areHoesEffectiveOn()) { reg.addRecipe(new EmiBlockLootRecipe(new ResourceLocation("emiloot", "block_" + block.blockID + "_" + metadata + "_hoe"), blockStack, getTools(hoes, getHarvestLevel(block, metadata)), drops)); }
+                }
             }
         }
     }

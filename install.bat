@@ -1,3 +1,10 @@
+@echo off
+set "JAVA_HOME=C:\Program Files\Eclipse Adoptium\jdk-17.0.19.10-hotspot"
+set "PATH=%JAVA_HOME%\bin;%PATH%"
+echo JAVA_HOME=%JAVA_HOME%
+echo Java:
+java -version
+echo.
 set MAPPINGS_VERSION=1.0.3
 cd /d "%~dp0"
 rd /s /q "build_BTW\BTW_dev"

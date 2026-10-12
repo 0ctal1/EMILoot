@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
   "id": "${mod_id}",
-  "version": "${version}-BTW-${btw_version}+",
-  "name": "${name}",
-  "description": "Makes EMI able to show block drop info",
+  "version": "${version}",
+  "name": "EMI Loot",
+  "description": "shows chest loot, block drops, mob drops, and ore distribution inside EMI",
   "authors": [
     "0ctal"
   ],
@@ -11,12 +11,18 @@
     "sources": "https://github.com/0ctal1/EMILoot"
   },
   "license": "ARR",
-  "icon": "assets/emiloot/icon.png",
-  "environment": "*",
+  "icon": "assets/emi_loot/icon.png",
+  "environment": "client",
   "entrypoints": {
+    "btw:addon": [
+      "btw.community.emiloot.EmiLootAddon"
+    ],
     "emi": [
-      "net.fabricmc.emiloot.EMILoot"
+      "btw.community.emiloot.emi.EmiLootPlugin"
     ]
+  },
+  "custom": {
+    "btw:addon_prefix": "EL"
   },
   "mixins": [
     "${mod_id}.mixins.json"

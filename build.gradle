@@ -19,7 +19,6 @@ repositories {
 		name = 'legacy-fabric'
 		url = 'https://maven.legacyfabric.net'
 	}
-	// Fixed LWJGL on Linux
 	maven {
 		name = 'Babric'
 		url = 'https://maven.glass-launcher.net/babric'
@@ -34,8 +33,7 @@ repositories {
 }
 
 loom {
-	setIntermediaryUrl('https://maven.legacyfabric.net/net/legacyfabric/intermediary/%1$s/intermediary-%1$s-v2.jar');
-	//accessWidenerPath = file('src/main/resources/<NAME>.accesswidener')
+	setIntermediaryUrl('https://maven.legacyfabric.net/net/legacyfabric/intermediary/%1$s/intermediary-%1$s-v2.jar')
 	addMinecraftJarProcessor(
 			BTWJarReplacer, "BTWJarReplacer", projectDir.toString()
 	)

@@ -6,7 +6,6 @@ import emi.dev.emi.emi.api.recipe.EmiRecipe;
 import emi.dev.emi.emi.api.recipe.EmiRecipeCategory;
 import emi.dev.emi.emi.api.stack.EmiIngredient;
 import emi.dev.emi.emi.api.stack.EmiStack;
-import emi.dev.emi.emi.api.widget.SlotWidget;
 import emi.dev.emi.emi.api.widget.WidgetHolder;
 import net.minecraft.src.ResourceLocation;
 
@@ -59,6 +58,18 @@ public class ChestLootRecipe implements EmiRecipe {
         widgets.addText(EmiPort.ordered(EmiPort.translatable("emi_loot.chest." + table.key())), 20, 1, 0xFFFFFF, true);
         widgets.addText(EmiPort.ordered(table.minRolls() == table.maxRolls() ? EmiPort.translatable("emi_loot.rolls", String.valueOf(table.minRolls())) : EmiPort.translatable("emi_loot.rolls_range", String.valueOf(table.minRolls()), String.valueOf(table.maxRolls()))), 20, 11, 0xFFFFFF, true);
         widgets.addSlot(container, 0, 0).drawBack(true);
-        LootSlots.addOutputGrid(widgets, this, table.entries(), outputs, 0, OUTPUT_Y, COLUMNS, "emi_loot.per_roll", 0, false);
+        LootSlots.addOutputGrid(widgets, this, table.entries(), outputs, 0, OUTPUT_Y, COLUMNS, "emi_loot.per_roll", 0, true, (slot, e) -> slot.appendTooltip(EmiPort.translatable("emi_loot.per_chest", LootSlots.pct(chanceInChest(e.chance())), LootSlots.fmt(e.average() * averageRolls()))));
+    }
+
+    private float averageRolls() {
+        return (table.minRolls() + table.maxRolls()) / 2.0F;
+    }
+
+    private float chanceInChest(float perRoll) {
+        int min = table.minRolls();
+        int max = Math.max(min, table.maxRolls());
+        double missAll = 0.0;
+        for (int n = min; n <= max; n++) { missAll += Math.pow(1.0 - perRoll, n); }
+        return (float) (1.0 - missAll / (max - min + 1));
     }
 }

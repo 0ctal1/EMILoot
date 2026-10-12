@@ -14,6 +14,7 @@ import net.minecraft.src.StatCollector;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.function.BiConsumer;
 
 final class LootSlots {
     private LootSlots() {}
@@ -65,6 +66,10 @@ final class LootSlots {
     }
 
     static void addOutputGrid(WidgetHolder widgets, EmiRecipe recipe, List<LootEntry> entries, List<? extends EmiIngredient> stacks, int x0, int y0, int columns, String perKey, int samples, boolean details) {
+        addOutputGrid(widgets, recipe, entries, stacks, x0, y0, columns, perKey, samples, details, null);
+    }
+
+    static void addOutputGrid(WidgetHolder widgets, EmiRecipe recipe, List<LootEntry> entries, List<? extends EmiIngredient> stacks, int x0, int y0, int columns, String perKey, int samples, boolean details, BiConsumer<SlotWidget, LootEntry> extraTooltip) {
         String per = perKey == null ? null : StatCollector.translateToLocal(perKey);
         for (int i = 0; i < entries.size(); i++) {
             LootEntry e = entries.get(i);
@@ -86,6 +91,7 @@ final class LootSlots {
                     else { slot.appendTooltip(EmiPort.translatable("emi_loot.looting", ROMAN[l], pct(e.lootingChance()[l]), fmt(e.lootingAverage()[l]))); }
                 }
             } else if (e.lootingChance() != null && !e.rare()) { slot.appendTooltip(EmiPort.translatable("emi_loot.looting_none")); }
+            if (extraTooltip != null) { extraTooltip.accept(slot, e); }
             if (samples > 0) { slot.appendTooltip(EmiPort.translatable("emi_loot.estimated", String.valueOf(samples))); }
             slot.recipeContext(recipe);
         }

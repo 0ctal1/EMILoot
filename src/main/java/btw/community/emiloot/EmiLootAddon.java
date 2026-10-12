@@ -15,6 +15,7 @@ public class EmiLootAddon extends BTWAddon {
         config.registerBoolean("BlockDrops", EmiLootConfig.blockDrops);
         config.registerBoolean("OreDistribution", EmiLootConfig.oreDistribution);
         config.registerBoolean("HideSelfDrops", EmiLootConfig.hideSelfDrops);
+        config.registerBoolean("AccurateOreGraphs", EmiLootConfig.accurateOreGraphs);
         config.registerInt("BlockSamples", EmiLootConfig.blockSamples, 16, 10000);
         config.registerInt("MobSamples", EmiLootConfig.mobSamples, 16, 10000);
         config.registerInt("OreSamples", EmiLootConfig.oreSamples, 16, 100000);
@@ -27,6 +28,7 @@ public class EmiLootAddon extends BTWAddon {
         EmiLootConfig.blockDrops = config.getBoolean("BlockDrops");
         EmiLootConfig.oreDistribution = config.getBoolean("OreDistribution");
         EmiLootConfig.hideSelfDrops = config.getBoolean("HideSelfDrops");
+        EmiLootConfig.accurateOreGraphs = config.getBoolean("AccurateOreGraphs");
         EmiLootConfig.blockSamples = config.getInt("BlockSamples");
         EmiLootConfig.mobSamples = config.getInt("MobSamples");
         EmiLootConfig.oreSamples = config.getInt("OreSamples");

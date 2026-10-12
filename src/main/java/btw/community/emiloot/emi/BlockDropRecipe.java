@@ -12,7 +12,6 @@ import emi.dev.emi.emi.api.render.EmiTexture;
 import emi.dev.emi.emi.api.stack.EmiFistStack;
 import emi.dev.emi.emi.api.stack.EmiIngredient;
 import emi.dev.emi.emi.api.stack.EmiStack;
-import emi.dev.emi.emi.api.widget.SlotWidget;
 import emi.dev.emi.emi.api.widget.WidgetHolder;
 import net.minecraft.src.ItemStack;
 import net.minecraft.src.ResourceLocation;
@@ -22,7 +21,10 @@ import java.util.List;
 
 public class BlockDropRecipe implements EmiRecipe {
     private static final int TOOL_X = 20;
-    private static final int WIDTH = 66 + 5 * 18;
+    private static final int ARROW_X = 42;
+    private static final int OUTPUT_X = 68;
+    private static final int COLUMNS = 5;
+    private static final int WIDTH = OUTPUT_X + COLUMNS * 18;
     private final BlockDropTable table;
     private final ResourceLocation id;
     private final boolean badBreak;
@@ -32,15 +34,6 @@ public class BlockDropRecipe implements EmiRecipe {
     private final List<EmiIngredient> lookupInputs;
     private final List<EmiIngredient> lookupCatalysts;
     private final List<EmiStack> lookupOutputs;
-    private int arrowX() {
-        return tool != null ? 40 : 20;
-    }
-    private int outputX() {
-        return arrowX() + 26;
-    }
-    private int columns() {
-        return (WIDTH - outputX()) / 18;
-    }
     public BlockDropRecipe(BlockDropTable table) {
         this.table = table;
         this.badBreak = table.kind() == BlockDropScanner.Kind.BAD_BREAK;
@@ -94,16 +87,18 @@ public class BlockDropRecipe implements EmiRecipe {
         return WIDTH;
     }
     @Override public int getDisplayHeight() {
-        return LootSlots.rows(outputSlots.size(), columns()) * 18;
+        return LootSlots.rows(outputSlots.size(), COLUMNS) * 18;
     }
+
     @Override
     public void addWidgets(WidgetHolder widgets) {
         String label = badBreak ? "emi_loot.block.bad_break" : "emi_loot.block.harvest";
-        String toolKey = badBreak ? null : table.noToolNeeded() ? "emi_loot.tool.none" : tool != null ? "emi_loot.tool.min" : "emi_loot.tool.unknown";
-        SlotWidget in = widgets.addSlot(input, 0, 0);
-        in.appendTooltip(EmiPort.translatable(label));
-        if (tool != null) { widgets.addSlot(tool, TOOL_X, 0).appendTooltip(EmiPort.translatable(toolKey)); }
-        widgets.addTexture(EmiTexture.EMPTY_ARROW, arrowX(), 1);
-        LootSlots.addOutputGrid(widgets, this, table.entries(), outputSlots, outputX(), 0, columns(), "emi_loot.per_break", EmiLootConfig.blockSamples);
+        String toolKey = table.noToolNeeded() ? "emi_loot.tool.none" : tool != null ? "emi_loot.tool.min" : "emi_loot.tool.unknown";
+        boolean showTool = !badBreak && tool != null;
+        int inputX = showTool ? 0 : TOOL_X / 2;
+        widgets.addSlot(input, inputX, 0).appendTooltip(EmiPort.translatable(label));
+        if (showTool) { widgets.addSlot(tool, TOOL_X, 0).appendTooltip(EmiPort.translatable(toolKey)); }
+        widgets.addTexture(EmiTexture.EMPTY_ARROW, ARROW_X, 1);
+        LootSlots.addOutputGrid(widgets, this, table.entries(), outputSlots, OUTPUT_X, 0, COLUMNS, "emi_loot.per_break", EmiLootConfig.blockSamples);
     }
 }

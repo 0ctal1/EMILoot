@@ -1,5 +1,6 @@
 package btw.community.emiloot.emi;
 
+import btw.community.emiloot.EmiLootConfig;
 import btw.community.emiloot.data.OreDistributionScanner;
 import btw.community.emiloot.data.OreDistributionScanner.OreDistribution;
 import emi.dev.emi.emi.EmiPort;
@@ -27,18 +28,20 @@ final class OreGraphWidget extends Widget {
     private final Bounds bounds;
     private final float[][] bins;
     private final float max;
+    private final int bin;
 
     OreGraphWidget(OreDistribution data, int x, int y) {
         this.data = data;
         this.bounds = new Bounds(x, y, WIDTH, HEIGHT);
-        int count = LEVELS / 4;
+        this.bin = EmiLootConfig.accurateOreGraphs ? 1 : 4;
+        int count = LEVELS / bin;
         this.bins = new float[data.perY().size()][count];
         float m = 0;
         for (int b = 0; b < count; b++) {
             float total = 0;
             for (int v = 0; v < bins.length; v++) {
                 float sum = 0;
-                for (int level = b * 4; level < (b + 1) * 4; level++) {sum += data.perY().get(v)[level];}
+                for (int level = b * bin; level < (b + 1) * bin; level++) {sum += data.perY().get(v)[level];}
                 bins[v][b] = sum;
                 total += sum;
             }
@@ -59,7 +62,7 @@ final class OreGraphWidget extends Widget {
     private int binAt(int mouseX, int mouseY) {
         int level = mouseX - plotX();
         if (level < 0 || level >= LEVELS || mouseY < plotY() || mouseY >= plotY() + 40) { return -1; }
-        return level / 4;
+        return level / bin;
     }
 
     private float binTotal(int b) {
@@ -79,8 +82,8 @@ final class OreGraphWidget extends Widget {
         for (int b = 0; b <= count; b++) {
             int left = b > 0 ? heightOf(b - 1) : 0;
             int right = b < count ? heightOf(b) : 0;
-            int x = px + b * 4;
-            if (right > 0) { draw.fill(x, bottom - right, 4, 1, 0xFFFFFFFF); }
+            int x = px + b * bin;
+            if (right > 0) { draw.fill(x, bottom - right, bin, 1, 0xFFFFFFFF); }
             if (right > left) { draw.fill(x, bottom - right, 1, right - left, 0xFFFFFFFF); }
             else if (left > right) { draw.fill(x - 1, bottom - left, 1, left - right, 0xFFFFFFFF); }
         }
@@ -96,11 +99,13 @@ final class OreGraphWidget extends Widget {
         draw.fill(bounds.x(), bounds.y(), 1, 40 + 1, 0xFF373737);
         draw.fill(bounds.x() + 1, py + 40, WIDTH - 1, 1, 0xFFFFFFFF);
         draw.fill(bounds.x() + WIDTH - 1, bounds.y() + 1, 1, 40 + 1, 0xFFFFFFFF);
+        draw.fill(bounds.x() + WIDTH - 1, bounds.y(), 1, 1, 0xFF8B8B8B);
+        draw.fill(bounds.x(), py + 40, 1, 1, 0xFF8B8B8B);
         draw.resetColor();
         drawTextured(px, py);
         drawOutline(draw, px, py);
         int hovered = binAt(mouseX, mouseY);
-        if (hovered >= 0) { draw.fill(px + hovered * 4, py, 4, 40, 0x60FFFFFF); }
+        if (hovered >= 0) { draw.fill(px + hovered * bin, py, bin, 40, 0x80FFFFFF); }
         int labelY = py + 40 + 2;
         for (int level = 0; level <= LEVELS; level += 32) { draw.drawCenteredTextWithShadow(EmiPort.literal(String.valueOf(level)), px + Math.min(level, LEVELS - 4), labelY, 0xFFFFFFFF); }
         draw.resetColor();
@@ -140,7 +145,7 @@ final class OreGraphWidget extends Widget {
                         acc += bins[v][b];
                         int top = Math.round(acc / total * column);
                         if (top > drawn) {
-                            tile(t, ores[v], px + b * 4, bottom - top, 4, top - drawn, px, py);
+                            tile(t, ores[v], px + b * bin, bottom - top, bin, top - drawn, px, py);
                             drawn = top;
                         }
                     }
@@ -183,7 +188,8 @@ final class OreGraphWidget extends Widget {
         int b = binAt(mouseX, mouseY);
         if (b < 0) { return List.of(); }
         List<TooltipComponent> list = new ArrayList<>();
-        list.add(TooltipComponent.of(EmiPort.translatable("emi_loot.ore.at_y", String.valueOf(b * 4), String.valueOf(b * 4 + 4 - 1), amount(binTotal(b)))));
+        String total = amount(binTotal(b));
+        list.add(TooltipComponent.of(bin == 1 ? EmiPort.translatable("emi_loot.ore.at_level", String.valueOf(b), total) : EmiPort.translatable("emi_loot.ore.at_y", String.valueOf(b * bin), String.valueOf(b * bin + bin - 1), total)));
         if (bins.length > 1) { for (int v = 0; v < bins.length; v++) { if (bins[v][b] > 0) { list.add(TooltipComponent.of(EmiPort.literal("  " + data.variants().get(v).getDisplayName() + ": " + amount(bins[v][b])))); }}}
         list.add(TooltipComponent.of(EmiPort.translatable("emi_loot.ore.assumption." + (data.source().equals("nether") ? "nether" : "overworld"))));
         if (data.noteKey() != null) { list.add(TooltipComponent.of(EmiPort.translatable(data.noteKey()))); }

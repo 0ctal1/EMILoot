@@ -24,7 +24,10 @@ public final class OreSandboxWorld extends World {
     public static final int MIN_Y = 1;
     public static final int MAX_Y = 127;
     private int fillerId;
+    private int[] layerIds = new int[0];
+    private int[] layerMetas = new int[0];
     private Map<Long, Integer> placed;
+    private java.util.Set<Long> replacedFiller;
     @SuppressWarnings("unused") private OreSandboxWorld() { super(null, null, null, (WorldSettings) null, null, null); }
     public static OreSandboxWorld create(int dimension) throws Exception {
         Field unsafeField = Class.forName("sun.misc.Unsafe").getDeclaredField("theUnsafe");
@@ -35,19 +38,35 @@ public final class OreSandboxWorld extends World {
         world.isRemote = false;
         world.rand = new Random();
         world.placed = new HashMap<>();
+        world.mapStorage = new net.minecraft.src.MapStorage(null);
+        world.replacedFiller = new java.util.HashSet<>();
         world.worldInfo = new WorldInfo(new WorldSettings(0L, EnumGameType.SURVIVAL, true, false, WorldType.DEFAULT), "emi_loot_ores", true);
         SandboxWorld.setFieldOfType(world, WorldProvider.class, WorldProvider.getProviderForDimension(dimension));
         return world;
     }
 
-    public void reset(int fillerId, long seed) {
+    public void setLayers(int fillerId, int[] layerIds, int[] layerMetas) {
         this.fillerId = fillerId;
+        this.layerIds = layerIds;
+        this.layerMetas = layerMetas;
+    }
+
+    public void reset(long seed) {
         this.placed.clear();
+        this.replacedFiller.clear();
         this.rand.setSeed(seed);
     }
 
     public Map<Long, Integer> placed() {
         return placed;
+    }
+
+    public boolean replacedFiller(long key) {
+        return replacedFiller.contains(key);
+    }
+
+    public int fillerId() {
+        return fillerId;
     }
     public static int yOf(long key) {
         return (int) ((key >> 26) & 0xFF);
@@ -57,8 +76,13 @@ public final class OreSandboxWorld extends World {
     }
 
     private int baseId(int y) {
+        if (y >= 0 && y < layerIds.length) { return layerIds[y]; }
         if (y < MIN_Y) { return y == 0 ? Block.bedrock.blockID : 0; }
         return y <= MAX_Y ? fillerId : 0;
+    }
+
+    private int baseMeta(int y) {
+        return y >= 0 && y < layerMetas.length ? layerMetas[y] : 0;
     }
 
     @Override
@@ -72,7 +96,7 @@ public final class OreSandboxWorld extends World {
     public int getBlockMetadata(int x, int y, int z) {
         if (y < 0 || y > 255) { return 0; }
         Integer p = placed.get(key(x, y, z));
-        return p != null ? p & 15 : 0;
+        return p != null ? p & 15 : baseMeta(y);
     }
 
     @Override public boolean isAirBlock(int x, int y, int z) {
@@ -98,7 +122,9 @@ public final class OreSandboxWorld extends World {
     @Override
     public boolean setBlock(int x, int y, int z, int id, int meta, int flags) {
         if (y < 0 || y > 255) { return false; }
-        placed.put(key(x, y, z), (id << 4) | (meta & 15));
+        long k = key(x, y, z);
+        if (!placed.containsKey(k) && fillerId != 0 && baseId(y) == fillerId) { replacedFiller.add(k); }
+        placed.put(k, (id << 4) | (meta & 15));
         return true;
     }
 

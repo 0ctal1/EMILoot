@@ -56,7 +56,8 @@ public class BlockDropRecipe implements EmiRecipe {
                 allOutputs.add(stack);
                 allSame &= DropStats.key(v.get(i).stack()) == firstKey;
             }
-            long amount = Math.max(1, table.entries().get(i).maxCount());
+            LootEntry entry = table.entries().get(i);
+            long amount = LootSlots.hasRange(entry) ? 1 : Math.max(1, entry.maxCount());
             outputSlots.add(allSame ? perVariant.get(0) : EmiIngredient.of(perVariant, amount));
         }
 

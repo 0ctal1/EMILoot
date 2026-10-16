@@ -10,6 +10,7 @@ import btw.community.emiloot.data.OreDistributionScanner;
 import emi.dev.emi.emi.api.EmiPlugin;
 import emi.dev.emi.emi.api.EmiRegistry;
 import emi.dev.emi.emi.api.recipe.EmiRecipeCategory;
+import emi.dev.emi.emi.api.recipe.EmiRecipeSorting;
 import emi.dev.emi.emi.api.stack.EmiStack;
 import net.minecraft.src.Block;
 import net.minecraft.src.Item;
@@ -60,7 +61,8 @@ public class EmiLootPlugin implements EmiPlugin {
             EmiLootLog.info("Scanning block drops...");
             EmiLootProgress.step("block drops");
             try {
-                BLOCK_DROPS = new EmiRecipeCategory(new ResourceLocation("emi_loot", "block_drops"), EmiStack.of(Item.pickaxeIron));
+                EmiStack blockIcon = EmiStack.of(Item.pickaxeIron);
+                BLOCK_DROPS = new EmiRecipeCategory(new ResourceLocation("emi_loot", "block_drops"), blockIcon, blockIcon, EmiRecipeSorting.compareInputThenOutput());
                 registry.addCategory(BLOCK_DROPS);
                 int n = 0;
                 int hidden = 0;

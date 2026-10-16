@@ -8,8 +8,11 @@ import emi.dev.emi.emi.runtime.EmiHidden;
 import emi.dev.emi.emi.api.widget.SlotWidget;
 import emi.dev.emi.emi.api.widget.WidgetHolder;
 import emi.dev.emi.emi.EmiPort;
+import emi.dev.emi.emi.runtime.EmiDrawContext;
+import net.minecraft.src.Minecraft;
 import net.minecraft.src.ItemStack;
 import net.minecraft.src.StatCollector;
+import org.lwjgl.opengl.GL11;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -20,10 +23,63 @@ final class LootSlots {
     private LootSlots() {}
     static EmiStack toStack(LootEntry entry) {
         ItemStack stack = entry.stack().copy();
-        stack.stackSize = Math.max(1, entry.maxCount());
+        stack.stackSize = hasRange(entry) ? 1 : Math.max(1, entry.maxCount());
         EmiStack emi = EmiStack.of(stack).setAmount(stack.stackSize);
         if (entry.chance() < 0.995F) { emi = emi.setChance(roundChance(entry.chance())); }
         return emi;
+    }
+
+    private static final int RANGE_DASH = 3;
+    private static final int RANGE_SHIFT = 0;
+
+    static boolean hasRange(LootEntry entry) {
+        return entry.minCount() != entry.maxCount();
+    }
+
+    static final class RangeSlotWidget extends SlotWidget {
+        private final LootEntry entry;
+
+        RangeSlotWidget(EmiIngredient stack, int x, int y, LootEntry entry) {
+            super(stack, x, y);
+            this.entry = entry;
+        }
+
+        @Override
+        public void drawOverlay(emi.shims.java.net.minecraft.client.gui.DrawContext draw, int mouseX, int mouseY, float delta) {
+            drawRangeLabel(draw, entry, getBounds().x(), getBounds().y());
+            super.drawOverlay(draw, mouseX, mouseY, delta);
+        }
+    }
+
+    static void drawRangeLabel(emi.shims.java.net.minecraft.client.gui.DrawContext draw, LootEntry entry, int x, int y) {
+        String min = String.valueOf(entry.minCount());
+        String max = String.valueOf(entry.maxCount());
+        EmiDrawContext context = EmiDrawContext.wrap(draw);
+        net.minecraft.src.FontRenderer font = Minecraft.getMinecraft().fontRenderer;
+        int minWidth = font.getStringWidth(min);
+        int maxWidth = font.getStringWidth(max);
+        int width = minWidth + RANGE_DASH + maxWidth;
+        GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
+        GL11.glDisable(GL11.GL_LIGHTING);
+        GL11.glDisable(GL11.GL_COLOR_MATERIAL);
+        GL11.glDisable(GL11.GL_BLEND);
+        GL11.glEnable(GL11.GL_TEXTURE_2D);
+        GL11.glEnable(GL11.GL_ALPHA_TEST);
+        GL11.glEnable(GL11.GL_DEPTH_TEST);
+        GL11.glDepthMask(true);
+        GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
+        context.push();
+        context.matrices().translate(x, y, 200.0);
+        int left = Math.max(0, 17 - width) + RANGE_SHIFT;
+        int top = 10;
+        context.drawTextWithShadow(EmiPort.literal(min), left, top, -1);
+        int dashX = left + minWidth;
+        context.fill(dashX + 1, top + 4, RANGE_DASH, 1, 0xFF3F3F3F);
+        context.fill(dashX, top + 3, RANGE_DASH, 1, 0xFFFFFFFF);
+        context.drawTextWithShadow(EmiPort.literal(max), dashX + RANGE_DASH + 1, top, -1);
+        context.pop();
+        GL11.glPopAttrib();
+        GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
     }
 
     static List<EmiStack> toStacks(List<LootEntry> entries) {
@@ -75,7 +131,7 @@ final class LootSlots {
             LootEntry e = entries.get(i);
             int x = x0 + (i % columns) * 18;
             int y = y0 + (i / columns) * 18;
-            SlotWidget slot = widgets.addSlot(stacks.get(i), x, y);
+            SlotWidget slot = hasRange(e) ? widgets.add(new RangeSlotWidget(stacks.get(i), x, y, e)) : widgets.addSlot(stacks.get(i), x, y);
             if (!details) {
                 slot.recipeContext(recipe);
                 continue;

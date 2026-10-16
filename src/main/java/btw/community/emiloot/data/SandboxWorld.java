@@ -92,26 +92,38 @@ public final class SandboxWorld extends World {
         return worldInfo.getData(entry);
     }
     @Override public <T> void setData(DataEntry.WorldDataEntry<T> entry, T value) {}
+    public void restoreBlockUnderTest(int blockId, int metadata) {
+        this.blockId = blockId;
+        this.metadata = metadata;
+    }
+
+    private boolean setOrigin(int x, int y, int z, int id, int meta) {
+        if (!isOrigin(x, y, z)) { return false; }
+        this.blockId = id;
+        this.metadata = id == 0 ? 0 : meta & 15;
+        return true;
+    }
+
     @Override public boolean setBlock(int x, int y, int z, int id, int meta, int flags) {
-        return false;
+        return setOrigin(x, y, z, id, meta);
     }
     @Override public boolean setBlock(int x, int y, int z, int id) {
-        return false;
+        return setOrigin(x, y, z, id, 0);
     }
     @Override public boolean setBlockMetadataWithNotify(int x, int y, int z, int meta, int flags) {
-        return false;
+        return isOrigin(x, y, z) && setOrigin(x, y, z, blockId, meta);
     }
     @Override public boolean setBlockMetadataWithNotify(int x, int y, int z, int meta) {
-        return false;
+        return isOrigin(x, y, z) && setOrigin(x, y, z, blockId, meta);
     }
     @Override public boolean setBlockToAir(int x, int y, int z) {
-        return false;
+        return setOrigin(x, y, z, 0, 0);
     }
     @Override public boolean setBlockAndMetadataWithNotify(int x, int y, int z, int id, int meta) {
-        return false;
+        return setOrigin(x, y, z, id, meta);
     }
     @Override public boolean setBlockWithNotify(int x, int y, int z, int id) {
-        return false;
+        return setOrigin(x, y, z, id, 0);
     }
     @Override public void setBlockTileEntity(int x, int y, int z, TileEntity tileEntity) {}
     @Override public void removeBlockTileEntity(int x, int y, int z) {}

@@ -17,6 +17,7 @@ import java.util.List;
 public class OreDistributionRecipe implements EmiRecipe {
     private static final int WIDTH = 160;
     private static final int GRAPH_Y = 22;
+    private static final int GRAPH_X = 22;
     private final OreDistribution data;
     private final ResourceLocation id;
     private final List<EmiStack> variants = new ArrayList<>();
@@ -47,15 +48,14 @@ public class OreDistributionRecipe implements EmiRecipe {
         return WIDTH;
     }
     @Override public int getDisplayHeight() {
-        return GRAPH_Y + OreGraphWidget.HEIGHT;
+        return GRAPH_Y + Math.max(OreGraphWidget.HEIGHT, variants.size() * 18);
     }
     @Override
     public void addWidgets(WidgetHolder widgets) {
         boolean multi = variants.size() > 1;
         float total = data.total();
-        int textX = variants.size() * 18 + 3;
-        widgets.addText(EmiPort.ordered(EmiPort.translatable("emi_loot.ore.source." + data.source())), textX, 1, 0xFFFFFF, true);
-        widgets.addText(EmiPort.ordered(EmiPort.translatable("emi_loot.ore.range", String.valueOf(data.minY()), String.valueOf(data.maxY()), LootSlots.fmt(total))), textX, 11, 0xFFFFFF, true);
+        widgets.add(new ScrollingTextWidget(data.fullLabel(), 0, 1, WIDTH, 0xFFFFFF));
+        widgets.addText(EmiPort.ordered(EmiPort.translatable("emi_loot.ore.range", String.valueOf(data.minY()), String.valueOf(data.maxY()), LootSlots.fmt(total))), 0, 11, 0xFFFFFF, true);
         for (int i = 0; i < variants.size(); i++) {
             float[] perY = data.perY().get(i);
             float sum = 0;
@@ -68,12 +68,12 @@ public class OreDistributionRecipe implements EmiRecipe {
                     max = y;
                 }
             }
-            SlotWidget slot = widgets.addSlot(variants.get(i), i * 18, 0);
+            SlotWidget slot = widgets.addSlot(variants.get(i), 0, GRAPH_Y + i * 18);
             slot.appendTooltip(EmiPort.translatable("emi_loot.ore.variant_range", String.valueOf(Math.max(min, 0)), String.valueOf(Math.max(max, 0))));
             if (multi && total > 0) { slot.appendTooltip(EmiPort.translatable("emi_loot.ore.variant_share", LootSlots.pct(sum / total))); }
             slot.recipeContext(this);
         }
 
-        widgets.add(new OreGraphWidget(data, (WIDTH - OreGraphWidget.WIDTH) / 2, GRAPH_Y));
+        widgets.add(new OreGraphWidget(data, GRAPH_X, GRAPH_Y));
     }
 }

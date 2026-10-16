@@ -1,8 +1,11 @@
 package btw.community.emiloot.data;
 
+import api.item.items.PlaceAsBlockItem;
+import net.minecraft.src.BlockHalfSlab;
 import btw.community.emiloot.EmiLootConfig;
 import net.minecraft.src.Block;
 import net.minecraft.src.Item;
+import net.minecraft.src.ItemBlock;
 import net.minecraft.src.ItemStack;
 
 import java.util.ArrayList;
@@ -74,7 +77,7 @@ public final class BlockDropScanner {
         return out;
     }
 
-    private static Set<Integer> candidateMetas(Item blockItem) {
+    private static Set<Integer> candidateMetas(Block block, Item blockItem) {
         Set<Integer> metas = new LinkedHashSet<>();
         if (blockItem.getHasSubtypes()) {
             try {
@@ -88,15 +91,16 @@ public final class BlockDropScanner {
     }
 
     private static void scanBlock(SandboxWorld world, Block block, Item blockItem, int samples, List<BlockDropTable> out) {
+        if (block instanceof BlockHalfSlab && block.isOpaqueCube()) { return; }
         boolean subtypes = blockItem.getHasSubtypes();
         Set<String> seenHarvest = new HashSet<>();
         Set<String> seenBad = new HashSet<>();
         List<Found> found = new ArrayList<>();
         int harvestFailures = 0;
         int badFailures = 0;
-        for (int meta : candidateMetas(blockItem)) {
-            ItemStack input = pickedStack(world, block, meta, subtypes);
-            if (input == null) { continue; }
+        for (int meta : candidateMetas(block, blockItem)) {
+            ItemStack picked = pickedStack(world, block, meta, subtypes);
+            if (picked == null) { continue; }
             ToolInfo tools = ToolInfo.of(world, block, meta);
             boolean harvestable = tools == ToolInfo.NONE || tools.noToolNeeded() || !tools.tools().isEmpty();
             boolean badBreakPossible = !tools.noToolNeeded();
@@ -105,17 +109,22 @@ public final class BlockDropScanner {
                 harvestFailures++;
                 harvest = simulateFormula(block, meta, samples);
             }
-            Set<Long> harvestKeys = harvest == null ? Set.of() : new HashSet<>(harvest.keys());
-            if (harvest != null && !harvest.isEmpty() && seenHarvest.add(input.itemID + ":" + input.getItemDamage() + ":" + harvestKeys)) {
-                List<LootEntry> entries = harvest.toEntries(1.0F, false);
-                if (!(EmiLootConfig.hideSelfDrops && isSelfDrop(input, entries))) { found.add(new Found(input, meta, Kind.HARVEST, entries, tools)); }
-            }
-
             DropStats bad = !badBreakPossible || world == null || badFailures >= 2 ? null : simulate(world, block, meta, samples, Kind.BAD_BREAK);
             if (bad == null && badBreakPossible && world != null) { badFailures++; }
-            if (bad != null && !bad.isEmpty()) {
+            List<LootEntry> harvestEntries = harvest == null || harvest.isEmpty() ? null : harvest.toEntries(1.0F, false);
+            List<LootEntry> badEntries = bad == null || bad.isEmpty() ? null : bad.toEntries(1.0F, false);
+            if (harvestEntries != null && sameDrops(harvestEntries, badEntries)) {
+                tools = new ToolInfo(true, List.of());
+                badEntries = null;
+            }
+            ItemStack input = placerInput(block, picked, harvestEntries);
+            Set<Long> harvestKeys = harvest == null ? Set.of() : new HashSet<>(harvest.keys());
+            if (harvestEntries != null && seenHarvest.add(input.itemID + ":" + input.getItemDamage() + ":" + harvestKeys)) {
+                if (!(EmiLootConfig.hideSelfDrops && isSelfDrop(input, harvestEntries))) { found.add(new Found(input, meta, Kind.HARVEST, harvestEntries, tools)); }
+            }
+            if (badEntries != null) {
                 Set<Long> badKeys = new HashSet<>(bad.keys());
-                if (!badKeys.equals(harvestKeys) && seenBad.add(input.itemID + ":" + input.getItemDamage() + ":" + badKeys)) { found.add(new Found(input, meta, Kind.BAD_BREAK, bad.toEntries(1.0F, false), ToolInfo.NONE)); }
+                if (!badKeys.equals(harvestKeys) && seenBad.add(input.itemID + ":" + input.getItemDamage() + ":" + badKeys)) { found.add(new Found(input, meta, Kind.BAD_BREAK, badEntries, ToolInfo.NONE)); }
             }
         }
 
@@ -130,7 +139,9 @@ public final class BlockDropScanner {
         for (List<Found> group : groups.values()) {
             List<ItemStack> inputs = new ArrayList<>();
             List<List<LootEntry>> variants = new ArrayList<>();
+            Set<Long> seenInputs = new HashSet<>();
             for (Found f : group) {
+                if (!seenInputs.add(DropStats.key(f.input()))) { continue; }
                 inputs.add(f.input());
                 variants.add(f.entries());
             }
@@ -139,19 +150,53 @@ public final class BlockDropScanner {
         }
     }
 
+    private static boolean sameDrops(List<LootEntry> a, List<LootEntry> b) {
+        if (a == null || b == null || a.size() != b.size()) { return false; }
+        java.util.Map<Long, LootEntry> byKey = new java.util.HashMap<>();
+        for (LootEntry e : b) { byKey.put(DropStats.key(e.stack()), e); }
+        for (LootEntry e : a) {
+            LootEntry o = byKey.get(DropStats.key(e.stack()));
+            if (o == null || o.minCount() != e.minCount() || o.maxCount() != e.maxCount() || Math.abs(o.chance() - e.chance()) > 0.02F) { return false; }
+        }
+        return true;
+    }
+
+    private static int placedBlockId(ItemStack stack) {
+        Item item = stack.getItem();
+        if (item instanceof ItemBlock itemBlock) { return itemBlock.getBlockID(); }
+        if (item instanceof PlaceAsBlockItem placer) { return placer.getBlockID(); }
+        return -1;
+    }
+
+    private static ItemStack placerInput(Block block, ItemStack picked, List<LootEntry> drops) {
+        if (drops == null || placedBlockId(picked) == block.blockID) { return picked; }
+        for (LootEntry e : drops) {
+            if (placedBlockId(e.stack()) == block.blockID && StackValidator.isValid(e.stack())) {
+                ItemStack placer = e.stack().copy();
+                placer.stackSize = 1;
+                return placer;
+            }
+        }
+        return picked;
+    }
+
     private static ItemStack pickedStack(SandboxWorld world, Block block, int meta, boolean subtypes) {
         ItemStack fallback = new ItemStack(block.blockID, 1, subtypes ? meta : 0);
         if (world != null) {
             try {
                 world.setBlockUnderTest(block.blockID, meta, 0L);
                 int id = block.idPicked(world, SandboxWorld.X, SandboxWorld.Y, SandboxWorld.Z);
-                if (subtypes && id == block.blockID && StackValidator.isValid(fallback)) { return fallback; }
+                if (subtypes && id == block.blockID) {
+                    ItemStack own = new ItemStack(block.blockID, 1, block.getDamageValue(world, SandboxWorld.X, SandboxWorld.Y, SandboxWorld.Z));
+                    if (StackValidator.isValid(own)) { return own; }
+                    if (StackValidator.isValid(fallback)) { return fallback; }
+                }
                 if (id != block.blockID && block.renderAsNormalBlock()) {
                     ItemStack own = new ItemStack(block.blockID, 1, meta);
                     if (StackValidator.isValid(own)) { return own; }
                 }
                 if (id > 0 && id < Item.itemsList.length && Item.itemsList[id] != null) {
-                    ItemStack picked = new ItemStack(id, 1, block.getDamageValue(world, SandboxWorld.X, SandboxWorld.Y, SandboxWorld.Z));
+                    ItemStack picked = normalized(new ItemStack(id, 1, block.getDamageValue(world, SandboxWorld.X, SandboxWorld.Y, SandboxWorld.Z)));
                     if (StackValidator.isValid(picked)) { return picked; }
                 }
             }
@@ -168,17 +213,11 @@ public final class BlockDropScanner {
         for (int i = 0; i < samples; i++) {
             List<ItemStack> drops;
             boolean ok = true;
+            world.restoreBlockUnderTest(block.blockID, meta);
             LootCapture.begin();
             try {
                 if (kind == Kind.HARVEST) { block.dropBlockAsItemWithChance(world, SandboxWorld.X, SandboxWorld.Y, SandboxWorld.Z, meta, 1.0F, 0); }
-                else {
-                    try { block.onBlockDestroyedWithImproperTool(world, null, SandboxWorld.X, SandboxWorld.Y, SandboxWorld.Z, meta); }
-                    catch (NullPointerException npe) {
-                        LootCapture.end();
-                        LootCapture.begin();
-                        block.dropComponentItemsOnBadBreak(world, SandboxWorld.X, SandboxWorld.Y, SandboxWorld.Z, meta, 1.0F);
-                    }
-                }
+                else { breakByHand(world, block); }
             }
             catch (Throwable t) { ok = false; }
             finally { drops = LootCapture.end(); }
@@ -191,6 +230,31 @@ public final class BlockDropScanner {
             if (allSame && i + 1 >= DETERMINISTIC_AFTER) { break; }
         }
         return stats;
+    }
+
+    private static final int MAX_HAND_HITS = 64;
+
+    private static void breakByHand(SandboxWorld world, Block block) {
+        int x = SandboxWorld.X;
+        int y = SandboxWorld.Y;
+        int z = SandboxWorld.Z;
+        for (int hit = 0; hit < MAX_HAND_HITS && world.getBlockId(x, y, z) == block.blockID; hit++) {
+            int meta = world.getBlockMetadata(x, y, z);
+            boolean convertible;
+            try { convertible = block.canConvertBlock(null, world, x, y, z); }
+            catch (Throwable t) { convertible = false; }
+            if (convertible) {
+                if (!block.convertBlock(null, world, x, y, z, 1)) { return; }
+                continue;
+            }
+            try { block.onBlockDestroyedWithImproperTool(world, null, x, y, z, meta); }
+            catch (NullPointerException npe) {
+                LootCapture.end();
+                LootCapture.begin();
+                block.dropComponentItemsOnBadBreak(world, x, y, z, meta, 1.0F);
+            }
+            return;
+        }
     }
 
     private static java.util.Map<Long, Integer> signature(List<ItemStack> drops) {
@@ -219,8 +283,20 @@ public final class BlockDropScanner {
 
     private static List<ItemStack> validOnly(List<ItemStack> drops) {
         List<ItemStack> list = new ArrayList<>(drops.size());
-        for (ItemStack s : drops) { if (s != null && VALID_CACHE.computeIfAbsent(DropStats.key(s), k -> StackValidator.isValid(s))) { list.add(s); }}
+        for (ItemStack raw : drops) {
+            if (raw == null) { continue; }
+            ItemStack s = normalized(raw);
+            if (VALID_CACHE.computeIfAbsent(DropStats.key(s), k -> StackValidator.isValid(s))) { list.add(s); }
+        }
         return list;
+    }
+
+    private static ItemStack normalized(ItemStack stack) {
+        Item item = stack.getItem();
+        if (item == null || item.getHasSubtypes() || item.isDamageable() || stack.getItemDamage() == 0) { return stack; }
+        ItemStack copy = stack.copy();
+        copy.setItemDamage(0);
+        return copy;
     }
 
     private static boolean isSelfDrop(ItemStack input, List<LootEntry> entries) {

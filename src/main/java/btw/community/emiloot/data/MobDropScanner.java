@@ -3,10 +3,15 @@ package btw.community.emiloot.data;
 import btw.community.emiloot.EmiLootConfig;
 import btw.community.emiloot.mixin.EntityListAccessor;
 import btw.community.emiloot.mixin.EntityLivingBaseInvoker;
-import net.minecraft.src.Entity;
+import btw.community.emiloot.mixin.EntitySlimeInvoker;
+import api.entity.component.VariantComponent;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.src.EntityEggInfo;
 import net.minecraft.src.EntityList;
+import net.minecraft.src.EntityVillager;
 import net.minecraft.src.EntityLiving;
 import net.minecraft.src.EntityLivingBase;
+import net.minecraft.src.EntitySlime;
 import net.minecraft.src.Item;
 import net.minecraft.src.ItemStack;
 import net.minecraft.src.Minecraft;
@@ -27,24 +32,34 @@ public final class MobDropScanner {
     public static List<MobDropTable> scan() {
         List<MobDropTable> tables = new ArrayList<>();
         World world = Minecraft.getMinecraft().theWorld;
+        World samplingWorld = serverWorld(world);
         int samples = Math.max(16, EmiLootConfig.mobSamples);
         Map<Integer, Class> idToClass = new TreeMap<>((Map<Integer, Class>) EntityListAccessor.emiLoot$getIdToClassMapping());
         Map eggs = EntityListAccessor.emiLoot$getEntityEggs();
+        Map classToName = EntityListAccessor.emiLoot$getClassToStringMapping();
+        Set<String> hidden = hiddenMobs();
         for (Map.Entry<Integer, Class> e : idToClass.entrySet()) {
             Class<?> cls = e.getValue();
             if (cls == null || !EntityLiving.class.isAssignableFrom(cls) || Modifier.isAbstract(cls.getModifiers())) { continue; }
+            String name = EntityList.getStringFromID(e.getKey());
+            if (name == null) { name = cls.getSimpleName(); }
+            if (hidden.contains(name.toLowerCase(java.util.Locale.ROOT))) { continue; }
+            Object eggInfo = eggs == null ? null : eggs.get(e.getKey());
             EntityLivingBase entity;
-            try { entity = (EntityLivingBase) cls.getConstructor(World.class).newInstance(world); }
+            EntityLivingBase sampler;
+            try {
+                entity = create(cls, world, eggInfo);
+                sampler = samplingWorld == world ? entity : create(cls, samplingWorld, eggInfo);
+            }
             catch (Throwable t) {
                 EmiLootLog.warn("Could not create " + cls.getName() + " for mob drops: " + t);
                 continue;
             }
-            EmiLootProgress.step("mob drops: " + cls.getSimpleName());
-            String name = EntityList.getEntityString((Entity) entity);
-            if (name == null) { name = cls.getSimpleName(); }
+            EmiLootProgress.step("mob drops: " + name);
             try {
-                List<LootEntry> entries = simulate(entity, samples);
-                int[] xp = experience(entity, samples);
+                List<LootEntry> entries = simulateAnySize(sampler, samples);
+                int[] xp = experience(sampler, samples);
+                if (sampler != entity && sampler instanceof EntitySlime slime && entity instanceof EntitySlime) { ((EntitySlimeInvoker) entity).emiLoot$setSlimeSize(slime.getSlimeSize()); }
                 if (entries.isEmpty() && (xp == null || xp[1] <= 0)) { continue; }
                 ItemStack egg = eggs != null && eggs.containsKey(e.getKey())
                         ? new ItemStack(Item.monsterPlacer.itemID, 1, e.getKey())
@@ -54,10 +69,84 @@ public final class MobDropScanner {
             }
             catch (Throwable t) { EmiLootLog.warn("Skipping mob drops for " + name + ": " + t); }
         }
+        tables = mergeVariants(tables, classToName);
         if (world == null) {
             EmiLootLog.info("No world was loaded while scanning mob drops; mob's drops depend on the world may be missing until EMI reloads in-game.");
         }
         return tables;
+    }
+
+    private static World serverWorld(World fallback) {
+        try {
+            MinecraftServer server = MinecraftServer.getServer();
+            World w = server == null ? null : server.worldServerForDimension(0);
+            if (w != null) { return w; }
+        }
+        catch (Throwable ignored) {}
+        EmiLootLog.info("No integrated server world; mob drops that only happen server-side may be missing");
+        return fallback;
+    }
+
+    private static EntityLivingBase create(Class<?> cls, World world, Object eggInfo) throws Exception {
+        EntityLivingBase entity = (EntityLivingBase) cls.getConstructor(World.class).newInstance(world);
+        if (eggInfo instanceof EntityEggInfo info && info.variant != 0 && entity.hasComponent(VariantComponent.class)) {
+            entity.getComponent(VariantComponent.class).get().set(entity, info.variant);
+        }
+        return entity;
+    }
+
+    private static Set<String> hiddenMobs() {
+        Set<String> out = new java.util.HashSet<>();
+        String raw = EmiLootConfig.hiddenMobs == null ? "" : EmiLootConfig.hiddenMobs;
+        for (String part : raw.split(",")) {
+            String name = part.trim().toLowerCase(java.util.Locale.ROOT);
+            if (!name.isEmpty()) { out.add(name); }
+        }
+        return out;
+    }
+
+    @SuppressWarnings("rawtypes")
+    private static Class<?> variantParent(Class<?> cls, Map classToName) {
+        Class<?> parent = cls.getSuperclass();
+        if (parent == null || classToName == null || !Modifier.isAbstract(parent.getModifiers())) { return null; }
+        return classToName.containsKey(parent) ? parent : null;
+    }
+
+    private static String dropSignature(MobDropTable table) {
+        List<String> parts = new ArrayList<>();
+        for (LootEntry e : table.entries()) { parts.add(DropStats.key(e.stack()) + "x" + e.minCount() + "-" + e.maxCount() + "@" + Math.round(e.chance() * 50)); }
+        java.util.Collections.sort(parts);
+        return String.join(",", parts) + "|xp" + table.xpMin() + "-" + table.xpMax();
+    }
+
+    @SuppressWarnings("rawtypes")
+    private static List<MobDropTable> mergeVariants(List<MobDropTable> tables, Map classToName) {
+        Map<Class<?>, List<MobDropTable>> byParent = new java.util.LinkedHashMap<>();
+        for (MobDropTable t : tables) {
+            Class<?> parent = variantParent(t.entity().getClass(), classToName);
+            if (parent != null) { byParent.computeIfAbsent(parent, k -> new ArrayList<>()).add(t); }
+        }
+        Set<MobDropTable> drop = new java.util.HashSet<>();
+        Map<MobDropTable, MobDropTable> replace = new java.util.HashMap<>();
+        for (Map.Entry<Class<?>, List<MobDropTable>> group : byParent.entrySet()) {
+            List<MobDropTable> members = group.getValue();
+            if (members.size() < 2) { continue; }
+            String sig = dropSignature(members.get(0));
+            boolean identical = true;
+            for (MobDropTable m : members) { identical &= dropSignature(m).equals(sig); }
+            if (!identical) { continue; }
+            MobDropTable first = members.get(0);
+            if (first.entity() instanceof EntityVillager villager) { villager.setDirtyPeasant(1); }
+            String parentName = String.valueOf(classToName.get(group.getKey()));
+            replace.put(first, new MobDropTable(first.entityId(), parentName, first.entity(), first.spawnEgg(), first.entries(), first.samples(), first.xpMin(), first.xpMax(), first.xpAvg()));
+            for (int i = 1; i < members.size(); i++) { drop.add(members.get(i)); }
+        }
+        List<MobDropTable> out = new ArrayList<>();
+        for (MobDropTable t : tables) {
+            if (drop.contains(t)) { continue; }
+            out.add(replace.getOrDefault(t, t));
+        }
+        return out;
     }
 
     private static DropStats sample(int samples, Runnable hook) {
@@ -84,6 +173,17 @@ public final class MobDropScanner {
     private static DropStats sampleQuietly(int samples, Runnable hook) {
         try { return sample(samples, hook); }
         catch (Throwable t) { return new DropStats(); }
+    }
+
+    private static List<LootEntry> simulateAnySize(EntityLivingBase entity, int samples) {
+        if (!(entity instanceof EntitySlime)) { return simulate(entity, samples); }
+        List<LootEntry> entries = List.of();
+        for (int size : new int[]{1, 2, 4}) {
+            ((EntitySlimeInvoker) entity).emiLoot$setSlimeSize(size);
+            entries = simulate(entity, samples);
+            if (!entries.isEmpty()) { break; }
+        }
+        return entries;
     }
 
     private static List<LootEntry> simulate(EntityLivingBase entity, int samples) {

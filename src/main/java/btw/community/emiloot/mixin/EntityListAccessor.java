@@ -11,4 +11,5 @@ import java.util.Map;
 public interface EntityListAccessor {
     @SuppressWarnings("rawtypes") @Accessor("IDtoClassMapping") static Map emiLoot$getIdToClassMapping() { throw new AssertionError(); }
     @SuppressWarnings("rawtypes") @Accessor("entityEggs") static HashMap emiLoot$getEntityEggs() { throw new AssertionError(); }
+    @SuppressWarnings("rawtypes") @Accessor("classToStringMapping") static Map emiLoot$getClassToStringMapping() { throw new AssertionError(); }
 }

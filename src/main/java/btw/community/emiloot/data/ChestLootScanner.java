@@ -4,7 +4,7 @@ import btw.community.emiloot.mixin.WeightedRandomChestContentAccessor;
 import btw.community.emiloot.mixin.WeightedRandomItemAccessor;
 import net.fabricmc.loader.api.FabricLoader;
 import net.fabricmc.loader.api.MappingResolver;
-import btw.block.BTWBlocks;
+import net.minecraft.src.Block;
 import net.minecraft.src.Item;
 import net.minecraft.src.ItemStack;
 import net.minecraft.src.StatCollector;
@@ -14,93 +14,80 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
-import java.util.Map;
+import java.util.TreeSet;
 
 public final class ChestLootScanner {
-    public record ChestLootTable(String key, ItemStack icon, int minRolls, int maxRolls, List<LootEntry> entries) {}
-    private record Source(String key, String owner, String field, boolean hamper, int minRolls, int maxRolls) {}
-    private record RawEntry(ItemStack stack, int weight, int min, int max) { RawEntry withCount(int newMin, int newMax) { return new RawEntry(stack, weight, newMin, newMax); }}
-    @FunctionalInterface private interface DepthRule { RawEntry apply(RawEntry entry, int y); }
-    private record DepthBand(String suffix, int sampleY) {}
-    private record DepthVariant(DepthBand[] bands, DepthRule rule) {}
-    private static final int DUNGEON_REDSTONE_MAX_Y = 16;
-    private static final int DUNGEON_FULL_STACK_MAX_Y = 48;
-    private static final DepthVariant DUNGEON = new DepthVariant(new DepthBand[]{new DepthBand("deep", DUNGEON_REDSTONE_MAX_Y), new DepthBand("mid", DUNGEON_FULL_STACK_MAX_Y), new DepthBand("shallow", DUNGEON_FULL_STACK_MAX_Y + 1),
-    }, (e, y) -> {
-        int id = e.stack().itemID;
-        if (id == Item.redstone.itemID && y > DUNGEON_REDSTONE_MAX_Y) { return null; }
-        if ((id == Item.ingotIron.itemID || id == Item.gunpowder.itemID) && y > DUNGEON_FULL_STACK_MAX_Y) { return e.withCount(1, 1); }
-        return e;
-    });
-
-    private static final int MINESHAFT_REDSTONE_DIAMOND_MAX_Y = 24;
-    private static final int MINESHAFT_FULL_IRON_MAX_Y = 36;
-    private static final DepthVariant MINESHAFT = new DepthVariant(new DepthBand[]{ new DepthBand("deep", MINESHAFT_REDSTONE_DIAMOND_MAX_Y), new DepthBand("mid", MINESHAFT_FULL_IRON_MAX_Y), new DepthBand("shallow", MINESHAFT_FULL_IRON_MAX_Y + 1),
-    }, (e, y) -> {
-        int id = e.stack().itemID;
-        if (id == Item.redstone.itemID || id == Item.diamond.itemID) {
-            if (y > MINESHAFT_REDSTONE_DIAMOND_MAX_Y) { return null; }
-            if (id == Item.diamond.itemID) { return e.withCount(1, 1); }
+    public record ChestLootTable(String key, String name, ItemStack icon, int[] rolls, List<LootEntry> entries) {
+        public int minRolls() {
+            int m = Integer.MAX_VALUE;
+            for (int r : rolls) { m = Math.min(m, r); }
+            return m;
         }
-        if (id == Item.ingotIron.itemID && y > MINESHAFT_FULL_IRON_MAX_Y) { return e.withCount(1, 1); }
-        return e;
-    });
 
-    private static DepthVariant depthVariantFor(String key) {
-        return switch (key) {
-            case "dungeon" -> DUNGEON;
-            case "mineshaft" -> MINESHAFT;
-            default -> null;
-        };
+        public int maxRolls() {
+            int m = 0;
+            for (int r : rolls) { m = Math.max(m, r); }
+            return m;
+        }
+
+        public float averageRolls() {
+            float sum = 0;
+            for (int r : rolls) { sum += r; }
+            return sum / rolls.length;
+        }
+
+        public float chanceInChest(float perRoll) {
+            double miss = 0;
+            for (int r : rolls) { miss += Math.pow(1.0 - perRoll, r); }
+            return (float) (1.0 - miss / rolls.length);
+        }
     }
 
-    private static final Map<String, Integer> MANUSCRIPT_WEIGHTS = Map.of("dungeon", 30, "mineshaft", 1, "desert_temple", 1, "jungle_temple", 1, "stronghold_corridor", 1, "stronghold_library", 2, "stronghold_crossing", 1);
-    private static Item manuscript;
-    private static boolean manuscriptLookedUp;
-    private static Item findManuscript() {
-        if (manuscriptLookedUp) { return manuscript; }
-        manuscriptLookedUp = true;
-        Item fallback = null;
-        for (Item item : Item.itemsList) {
-            if (item == null) { continue; }
-            String key = item.getUnlocalizedName();
-            if (key == null) { continue; }
-            if ("Ancient Manuscript".equals(StatCollector.translateToLocal(key + ".name"))) { return manuscript = item; }
-            String lower = key.toLowerCase(Locale.ROOT);
-            if (fallback == null && (lower.contains("manuscript") || lower.contains("prophecy"))) { fallback = item; }
-        }
-        if (fallback == null) { EmiLootLog.warn("Could not find the Ancient Manuscript item; chest tables will omit it"); }
-        return manuscript = fallback;
-    }
+    private record Extra(int item, int min, int max, int weight) {}
+    private record Filter(int item, boolean remove, Integer removeAboveY, Integer removeBelowY, Integer setStack) {}
+    private record Source(String key, String owner, String field, int icon, int[] rolls, List<Extra> extras, List<Filter> filters) {}
+    private record RawEntry(ItemStack stack, int weight, int min, int max) {}
 
-    private static List<RawEntry> withInjected(String key, List<RawEntry> raw) {
-        Integer weight = MANUSCRIPT_WEIGHTS.get(key);
-        Item item = weight == null ? null : findManuscript();
-        if (item == null) { return raw; }
-        for (RawEntry e : raw) { if (e.stack().itemID == item.itemID) { return raw; }}
-        List<RawEntry> out = new ArrayList<>(raw);
-        out.add(new RawEntry(new ItemStack(item), weight, 1, 1));
+    private static final int CHEST = 1035;
+    private static final int HAMPER = 1054;
+    private static final int MINECART_CHEST = 342;
+    private static final int BOOK = 403;
+    private static final int IRON = 265;
+    private static final int GUNPOWDER = 289;
+    private static final int REDSTONE = 331;
+    private static final int DIAMOND = 264;
+    private static final int IRON_PICKAXE = 257;
+    private static final int PUMPKIN_SEEDS = 361;
+    private static final List<Source> SOURCES = List.of(
+            new Source("dungeon", "net.minecraft.class_1238", "field_6231", CHEST, new int[]{8},
+                    List.of(new Extra(BOOK, 1, 1, 30)),
+                    List.of(new Filter(IRON, false, 36, null, 1), new Filter(GUNPOWDER, false, 36, null, 1), new Filter(REDSTONE, false, 24, null, null))),
+            new Source("mineshaft", "net.minecraft.class_1253", "field_4910", MINECART_CHEST, range(3, 6),
+                    List.of(new Extra(BOOK, 1, 1, 1)),
+                    List.of(new Filter(IRON, false, 35, null, 1), new Filter(DIAMOND, false, 23, null, 1), new Filter(REDSTONE, false, 23, null, null),
+                            new Filter(IRON_PICKAXE, true, null, null, null), new Filter(PUMPKIN_SEEDS, true, null, null, null))),
+            new Source("nether_fortress", "net.minecraft.class_1274", "field_6234", CHEST, range(2, 5), List.of(), List.of()),
+            new Source("desert_temple", "net.minecraft.class_5", "lootListArray", HAMPER, range(2, 6), List.of(new Extra(BOOK, 1, 1, 1)), List.of()),
+            new Source("desert_temple_looted", "net.minecraft.class_5", "lootedLootListArray", HAMPER, new int[]{1, 1, 2, 2, 3}, List.of(new Extra(BOOK, 1, 1, 1)), List.of()),
+            new Source("jungle_temple", "net.minecraft.class_6", "lootListArray", HAMPER, range(2, 6), List.of(new Extra(BOOK, 1, 1, 1)), List.of()),
+            new Source("jungle_temple_looted", "net.minecraft.class_6", "lootedLootListArray", HAMPER, new int[]{1, 1, 2, 2, 3}, List.of(new Extra(BOOK, 1, 1, 1)), List.of()),
+            new Source("stronghold_corridor", "net.minecraft.class_15", "field_27", CHEST, range(2, 3), List.of(new Extra(BOOK, 1, 1, 1)), List.of()),
+            new Source("stronghold_library", "net.minecraft.class_19", "field_38", CHEST, range(1, 4), List.of(new Extra(BOOK, 1, 5, 2)), List.of()),
+            new Source("stronghold_crossing", "net.minecraft.class_24", "field_48", CHEST, range(1, 4), List.of(new Extra(BOOK, 1, 1, 1)), List.of()),
+            new Source("village_blacksmith", "net.minecraft.class_49", "field_89", HAMPER, range(3, 8), List.of(), List.of()));
+
+    private static int[] range(int min, int max) {
+        int[] out = new int[max - min + 1];
+        for (int i = 0; i < out.length; i++) { out[i] = min + i; }
         return out;
     }
 
-    private static final String CHEST_CONTENT_DESC = "[Lnet/minecraft/class_847;";
-    private static final Source[] SOURCES = {
-            new Source("dungeon", "net.minecraft.class_1238", "field_6231", false, 8, 8),
-            new Source("mineshaft", "net.minecraft.class_1253", "field_4910", false, 3, 6),
-            new Source("nether_fortress", "net.minecraft.class_1274", "field_6234", false, 2, 5),
-            new Source("desert_temple", "net.minecraft.class_5", "lootListArray", true, 2, 6),
-            new Source("desert_temple_looted", "net.minecraft.class_5", "lootedLootListArray", true, 1, 3),
-            new Source("jungle_temple", "net.minecraft.class_6", "lootListArray", true, 2, 6),
-            new Source("jungle_temple_looted", "net.minecraft.class_6", "lootedLootListArray", true, 1, 3),
-            new Source("stronghold_corridor", "net.minecraft.class_15", "field_27", false, 2, 3),
-            new Source("stronghold_library", "net.minecraft.class_19", "field_38", false, 1, 4),
-            new Source("stronghold_crossing", "net.minecraft.class_24", "field_48", false, 1, 4),
-            new Source("village_blacksmith", "net.minecraft.class_49", "field_89", true, 3, 8),
-    };
-
-    private ChestLootScanner() {
+    private static ItemStack stackOf(int id) {
+        return id > 0 && id < Item.itemsList.length && Item.itemsList[id] != null ? new ItemStack(id, 1, 0) : null;
     }
+    private record Band(int low, int high) {}
+    private static final String CHEST_CONTENT_DESC = "[Lnet/minecraft/class_847;";
+    private ChestLootScanner() {}
 
     public static List<ChestLootTable> scan() {
         List<ChestLootTable> tables = new ArrayList<>();
@@ -108,62 +95,89 @@ public final class ChestLootScanner {
         for (Source source : SOURCES) {
             try {
                 WeightedRandomChestContent[] contents = read(resolver, source);
-                if (contents == null || contents.length == 0) {
-                    continue;
-                }
-                List<RawEntry> raw = withInjected(source.key(), toRaw(contents));
-                ItemStack icon = new ItemStack(source.hamper() ? BTWBlocks.hamper : BTWBlocks.chest);
-                DepthVariant variant = depthVariantFor(source.key());
-                if (variant != null) {
-                    for (DepthBand band : variant.bands()) { addTable(tables, source.key() + "_" + band.suffix(), icon, source, applyDepth(raw, variant.rule(), band.sampleY())); }}
-                else {
-                    addTable(tables, source.key(), icon, source, raw);
+                if (contents == null || contents.length == 0) { continue; }
+                List<RawEntry> raw = withExtras(source, toRaw(contents));
+                ItemStack icon = stackOf(source.icon());
+                if (icon == null) { icon = new ItemStack(Block.chest); }
+                String name = displayName(source);
+                List<Band> bands = bandsFor(source.filters());
+                for (Band band : bands) {
+                    String key = bands.size() == 1 ? source.key() : source.key() + "_y" + band.low();
+                    String label = bands.size() == 1 ? name : bandLabel(name, band);
+                    List<LootEntry> entries = toEntries(raw, source.filters(), band);
+                    if (!entries.isEmpty()) { tables.add(new ChestLootTable(key, label, icon, source.rolls(), entries)); }
                 }
             }
-            catch (Throwable t) {
-                EmiLootLog.warn("Could not read chest loot '" + source.key() + "': " + t);
-            }
+            catch (Throwable t) { EmiLootLog.warn("Could not read chest loot '" + source.key() + "': " + t); }
         }
         return tables;
     }
 
-    private static void addTable(List<ChestLootTable> tables, String key, ItemStack icon, Source source, List<RawEntry> raw) {
-        List<LootEntry> entries = toEntries(raw);
-        if (!entries.isEmpty()) {
-            tables.add(new ChestLootTable(key, icon, source.minRolls(), source.maxRolls(), entries));
-        }
+    private static String displayName(Source source) {
+        String langKey = "emi_loot.chest." + source.key();
+        return StatCollector.func_94522_b(langKey) ? StatCollector.translateToLocal(langKey) : source.key();
     }
 
-    private static List<RawEntry> applyDepth(List<RawEntry> base, DepthRule rule, int y) {
-        List<RawEntry> out = new ArrayList<>(base.size());
-        for (RawEntry e : base) {
-            RawEntry adjusted = rule.apply(e, y);
-            if (adjusted != null) { out.add(adjusted); }
+    private static String bandLabel(String name, Band band) {
+        if (band.high() == Integer.MAX_VALUE) { return StatCollector.translateToLocalFormatted("emi_loot.chest.band_above", name, band.low()); }
+        return StatCollector.translateToLocalFormatted("emi_loot.chest.band_range", name, Math.max(0, band.low()), band.high());
+    }
+
+    private static List<Band> bandsFor(List<Filter> filters) {
+        TreeSet<Integer> cuts = new TreeSet<>();
+        for (Filter f : filters) {
+            if (f.removeAboveY() != null) { cuts.add(f.removeAboveY()); }
+            if (f.removeBelowY() != null) { cuts.add(f.removeBelowY() - 1); }
+        }
+        List<Band> bands = new ArrayList<>();
+        int low = 0;
+        for (int cut : cuts) {
+            if (cut < low) { continue; }
+            bands.add(new Band(low, cut));
+            low = cut + 1;
+        }
+        bands.add(new Band(low, Integer.MAX_VALUE));
+        return bands;
+    }
+
+    private static Filter filterFor(List<Filter> filters, ItemStack stack) {
+        for (Filter f : filters) { if (f.item() == stack.itemID) { return f; } }
+        return null;
+    }
+
+    private static List<RawEntry> withExtras(Source source, List<RawEntry> raw) {
+        List<RawEntry> out = new ArrayList<>(raw);
+        for (Extra extra : source.extras()) {
+            ItemStack stack = stackOf(extra.item());
+            if (stack == null) {
+                EmiLootLog.warn("Chest loot '" + source.key() + "': unknown extra item '" + extra.item() + "'");
+                continue;
+            }
+            boolean present = false;
+            for (RawEntry e : raw) { present |= e.stack().itemID == stack.itemID && e.stack().getItemDamage() == stack.getItemDamage(); }
+            if (!present) { out.add(new RawEntry(stack, extra.weight(), Math.max(1, extra.min()), Math.max(extra.min(), extra.max()))); }
         }
         return out;
     }
 
     private static WeightedRandomChestContent[] read(MappingResolver resolver, Source source) throws Exception {
+        if (source.owner() == null) { throw new IllegalArgumentException("no class given"); }
         String className = resolver.mapClassName("intermediary", source.owner());
         Class<?> cls = Class.forName(className, true, ChestLootScanner.class.getClassLoader());
-        Field field;
-        try {
+        Field field = null;
+        if (source.field() != null) {
             String fieldName = source.field().startsWith("field_") ? resolver.mapFieldName("intermediary", source.owner(), source.field(), CHEST_CONTENT_DESC) : source.field();
-            field = cls.getDeclaredField(fieldName);
-        } catch (NoSuchFieldException e) {
-            field = null;
+            try { field = cls.getDeclaredField(fieldName); }
+            catch (NoSuchFieldException ignored) {}
+        }
+        if (field == null) {
             for (Field f : cls.getDeclaredFields()) {
-                if (Modifier.isStatic(f.getModifiers()) && f.getType() == WeightedRandomChestContent[].class) {
-                    if (field != null) {
-                        throw e;
-                    }
-                    field = f;
-                }
-            }
-            if (field == null) {
-                throw e;
+                if (!Modifier.isStatic(f.getModifiers()) || f.getType() != WeightedRandomChestContent[].class) { continue; }
+                if (field != null) { throw new NoSuchFieldException("several loot arrays in " + className + "; name the field"); }
+                field = f;
             }
         }
+        if (field == null) { throw new NoSuchFieldException("no loot array in " + className); }
         field.setAccessible(true);
         return (WeightedRandomChestContent[]) field.get(null);
     }
@@ -185,15 +199,27 @@ public final class ChestLootScanner {
         return raw;
     }
 
-    private static List<LootEntry> toEntries(List<RawEntry> raw) {
+    private static boolean removedIn(Filter f, Band band) {
+        if (f == null) { return false; }
+        if (f.remove()) { return true; }
+        if (f.removeAboveY() != null && band.low() > f.removeAboveY()) { return true; }
+        return f.removeBelowY() != null && band.high() < f.removeBelowY();
+    }
+
+    private static List<LootEntry> toEntries(List<RawEntry> raw, List<Filter> filters, Band band) {
         int total = 0;
         for (RawEntry r : raw) { total += r.weight(); }
         List<LootEntry> entries = new ArrayList<>();
         if (total <= 0) { return entries; }
         for (RawEntry r : raw) {
+            Filter f = filterFor(filters, r.stack());
+            if (removedIn(f, band)) { continue; }
+            int min = r.min();
+            int max = r.max();
+            if (f != null && f.setStack() != null) { min = max = Math.max(1, f.setStack()); }
             float chance = (float) r.weight() / total;
-            float avg = chance * (r.min() + r.max()) / 2.0F;
-            entries.add(new LootEntry(r.stack(), r.min(), r.max(), chance, avg, r.weight(), total, false));
+            float avg = chance * (min + max) / 2.0F;
+            entries.add(new LootEntry(r.stack(), min, max, chance, avg, r.weight(), total, false));
         }
         entries.sort((a, b) -> Integer.compare(b.weight(), a.weight()));
         return entries;

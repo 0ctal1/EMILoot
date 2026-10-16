@@ -114,9 +114,8 @@ final class OreGraphWidget extends Widget {
     private void drawTextured(int px, int py) {
         boolean started = false;
         try {
-            boolean nether = data.source().equals("nether");
-            Icon[] stone = new Icon[3];
-            for (int s = 0; s < 3; s++) { stone[s] = nether ? Block.netherrack.getIcon(2, 0) : Block.stone.getIcon(2, s); }
+            Icon[] stone = new Icon[LEVELS];
+            for (int level = 0; level < LEVELS; level++) { stone[level] = layerIcon(level); }
             Icon[] ores = new Icon[bins.length];
             for (int v = 0; v < bins.length; v++) { ores[v] = iconOf(data.variants().get(v)); }
             for (Icon i : stone) { if (i == null) { return; } }
@@ -126,10 +125,7 @@ final class OreGraphWidget extends Widget {
             t.startDrawingQuads();
             started = true;
             t.setColorOpaque_I(0x5A5A5A);
-            for (int level = 0; level < LEVELS; level++) {
-                int strata = nether ? 0 : level <= 24 ? 2 : level <= 48 ? 1 : 0;
-                tile(t, stone[strata], px + level, py, 1, 40, px, py);
-            }
+            for (int level = 0; level < LEVELS; level++) { tile(t, stone[level], px + level, py, 1, 40, px, py); }
 
             t.setColorOpaque_I(0xFFFFFF);
             if (max > 0) {
@@ -154,6 +150,16 @@ final class OreGraphWidget extends Widget {
             t.draw();
         }
         catch (Throwable e) { if (started) { try { Tessellator.instance.draw(); } catch (Throwable ignored){} } }
+    }
+
+    private Icon layerIcon(int level) {
+        int[] ids = data.layerIds();
+        int[] metas = data.layerMetas();
+        int id = level < ids.length ? ids[level] : data.fillerId();
+        int meta = level < metas.length ? metas[level] : 0;
+        Block block = id > 0 && id < Block.blocksList.length ? Block.blocksList[id] : null;
+        if (block == null) { block = Block.blocksList[data.fillerId()]; meta = 0; }
+        return block == null ? null : block.getIcon(2, meta);
     }
 
     private static Icon iconOf(ItemStack stack) {
@@ -191,7 +197,8 @@ final class OreGraphWidget extends Widget {
         String total = amount(binTotal(b));
         list.add(TooltipComponent.of(bin == 1 ? EmiPort.translatable("emi_loot.ore.at_level", String.valueOf(b), total) : EmiPort.translatable("emi_loot.ore.at_y", String.valueOf(b * bin), String.valueOf(b * bin + bin - 1), total)));
         if (bins.length > 1) { for (int v = 0; v < bins.length; v++) { if (bins[v][b] > 0) { list.add(TooltipComponent.of(EmiPort.literal("  " + data.variants().get(v).getDisplayName() + ": " + amount(bins[v][b])))); }}}
-        list.add(TooltipComponent.of(EmiPort.translatable("emi_loot.ore.assumption." + (data.source().equals("nether") ? "nether" : "overworld"))));
+        Block filler = data.fillerId() > 0 && data.fillerId() < Block.blocksList.length ? Block.blocksList[data.fillerId()] : null;
+        if (filler != null) { list.add(TooltipComponent.of(EmiPort.translatable("emi_loot.ore.assumption", filler.getLocalizedName()))); }
         if (data.noteKey() != null) { list.add(TooltipComponent.of(EmiPort.translatable(data.noteKey()))); }
         list.add(TooltipComponent.of(EmiPort.translatable("emi_loot.ore.estimated", String.valueOf(data.samples()))));
         return list;

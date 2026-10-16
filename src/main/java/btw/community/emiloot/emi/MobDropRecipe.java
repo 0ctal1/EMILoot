@@ -13,6 +13,7 @@ import net.minecraft.src.Gui;
 import net.minecraft.src.Minecraft;
 import net.minecraft.src.RenderHelper;
 import net.minecraft.src.ResourceLocation;
+import net.minecraft.src.StatCollector;
 import org.lwjgl.opengl.GL11;
 
 import java.util.List;
@@ -74,6 +75,12 @@ public class MobDropRecipe implements EmiRecipe {
         return EmiPort.translatable("emi_loot.xp_range", String.valueOf(table.xpMin()), String.valueOf(table.xpMax())).getString();
     }
 
+    private String displayName() {
+        String key = "entity." + table.entityName() + ".name";
+        if (StatCollector.func_94522_b(key)) { return StatCollector.translateToLocal(key); }
+        return table.entityName().replaceAll("([a-z])([A-Z])", "$1 $2");
+    }
+
     private static void addStage(WidgetHolder widgets, int w, int h) {
         widgets.addDrawable(0, 0, w, h, (draw, mouseX, mouseY, delta) -> {
             Gui.drawRect(0, 0, w - 1, 1, 0xFF373737);
@@ -89,7 +96,7 @@ public class MobDropRecipe implements EmiRecipe {
 
     private static void addXpText(WidgetHolder widgets, int x, int y, String text) {
         FontRenderer font = Minecraft.getMinecraft().fontRenderer;
-        widgets.addDrawable(x - 1, y - 1, font.getStringWidth(text) + 2, 10, (draw, mouseX, mouseY, delta) -> {
+        widgets.addDrawable(x, y, font.getStringWidth(text) + 2, 10, (draw, mouseX, mouseY, delta) -> {
             RenderHelper.disableStandardItemLighting();
             FontRenderer fr = Minecraft.getMinecraft().fontRenderer;
             fr.drawString(text, 2, 1, 0);
@@ -107,7 +114,7 @@ public class MobDropRecipe implements EmiRecipe {
         addStage(widgets, STAGE_W, stageH);
         if (EntityWidget.canRender(table.entity())) { widgets.add(new EntityWidget(table.entity(), table.entityName(), 2, 3, STAGE_W - 4, stageH - 6)); }
         else if (egg != null) { widgets.addSlot(egg, (STAGE_W - 18) / 2, (stageH - 18) / 2).drawBack(false); }
-        widgets.addText(EmiPort.ordered(EmiPort.translatable("entity." + table.entityName() + ".name")), RIGHT_X, 1, 0xFFFFFF, true);
+        widgets.addText(EmiPort.ordered(EmiPort.literal(displayName())), RIGHT_X, 1, 0xFFFFFF, true);
         String xp = xpText();
         if (xp != null) { addXpText(widgets, RIGHT_X, XP_Y, xp); }
         LootSlots.addOutputGrid(widgets, this, table.entries(), outputs, RIGHT_X, OUTPUT_Y, COLUMNS, "emi_loot.per_kill", table.samples());

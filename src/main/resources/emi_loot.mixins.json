@@ -8,6 +8,7 @@
     "EntityMixin",
     "WorldMixin",
     "EntityLivingBaseInvoker",
+    "EntitySlimeInvoker",
     "EntityListAccessor",
     "WeightedRandomChestContentAccessor",
     "WeightedRandomItemAccessor"
